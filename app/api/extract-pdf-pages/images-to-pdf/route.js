@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
-import fileType from "file-type"; // You'll need to install this library: npm install file-type
+import { fileTypeFromBuffer, fileTypeFromStream } from "file-type";
 
 export async function POST(req) {
   try {
