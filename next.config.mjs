@@ -115,7 +115,6 @@ const nextConfig = {
   // Environment-specific configurations
   env: {
     MAX_FILE_SIZE: process.env.MAX_FILE_SIZE || '52428800', // 50MB default
-    NODE_ENV: process.env.NODE_ENV || 'development',
   },
 
   // Logging for production debugging
