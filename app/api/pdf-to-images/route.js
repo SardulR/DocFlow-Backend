@@ -1,4 +1,4 @@
-// app/api/pdf-to-images/route.ts
+// app/api/pdf-to-images/route.js
 import { NextResponse } from "next/server";
 import { fromBuffer } from "pdf2pic";
 import JSZip from "jszip";
@@ -20,21 +20,26 @@ export const POST = async (req) => {
       density: 100, // Image quality (higher is better)
       saveFilename: "page",
       format: "jpg",
-      savePath: ".", // No need to save to a file
+      width: 2000,
+      height: 2000,
     });
 
-    const images = await convert.bulk(-1, { responseType: "buffer" });
+    // FIXED: Added await here - bulk returns a Promise
+    const pages = await convert.bulk(-1, { responseType: "buffer" });
+    
     const zip = new JSZip();
 
-    // Loop through each image and add it to the zip file
-    images.forEach((imageBuffer, index) => {
-      // Ensure imageBuffer is a Buffer before adding it
-      if (imageBuffer && imageBuffer.buffer) {
-        zip.file(`page-${index + 1}.jpg`, imageBuffer.buffer);
+    // Loop through each page and add it to the zip file
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      
+      // FIXED: Check for page.buffer (not imageBuffer.buffer)
+      if (page && page.buffer) {
+        zip.file(`page-${i + 1}.jpg`, page.buffer);
       }
-    });
+    }
 
-    const zipBlob = await zip.generateAsync({ type: "nodebuffer" });
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
     // Return the zip file as a download
     const headers = new Headers();
@@ -44,11 +49,15 @@ export const POST = async (req) => {
       `attachment; filename="converted-images.zip"`
     );
 
-    return new Response(zipBlob, { headers });
+    return new Response(zipBuffer, { headers });
   } catch (error) {
     console.error("Server error:", error);
+    console.error("Error details:", error instanceof Error ? error.message : String(error));
     return NextResponse.json(
-      { error: "Server error: Failed to process PDF." },
+      { 
+        error: "Server error: Failed to process PDF.",
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     );
   }
