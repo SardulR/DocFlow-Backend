@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
-import { fileTypeFromBuffer, fileTypeFromStream } from "file-type";
+import { fileTypeFromBuffer } from "file-type";
 
 export async function POST(req) {
   try {
@@ -20,8 +20,8 @@ export async function POST(req) {
       const imageBuffer = await file.arrayBuffer();
       const imageBytes = new Uint8Array(imageBuffer);
 
-      // Validate the file type by its bytes, not just the file.type property
-      const type = await fileType.fromBuffer(imageBytes);
+      // ✅ FIXED: Changed from fileType.fromBuffer to fileTypeFromBuffer
+      const type = await fileTypeFromBuffer(imageBytes);
 
       if (!type || (type.mime !== "image/jpeg" && type.mime !== "image/png")) {
         console.warn(
