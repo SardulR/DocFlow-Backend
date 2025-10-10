@@ -1,7 +1,11 @@
 // app/api/pdf-to-images/route.js
 import { NextResponse } from "next/server";
-import { fromBuffer } from "pdf2pic";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import JSZip from "jszip";
+import { createCanvas } from "canvas";
+
+// Disable worker for server-side rendering
+pdfjsLib.GlobalWorkerOptions.workerSrc = null;
 
 export const POST = async (req) => {
   try {
@@ -13,35 +17,54 @@ export const POST = async (req) => {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdfBuffer = Buffer.from(arrayBuffer);
+    const uint8Array = new Uint8Array(arrayBuffer);
 
-    // Use pdf2pic to convert the PDF buffer to a list of image buffers
-    const convert = fromBuffer(pdfBuffer, {
-      density: 100, // Image quality (higher is better)
-      saveFilename: "page",
-      format: "jpg",
-      width: 2000,
-      height: 2000,
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Array,
+      useSystemFonts: true,
     });
-
-    // FIXED: Added await here - bulk returns a Promise
-    const pages = await convert.bulk(-1, { responseType: "buffer" });
     
+    const pdfDocument = await loadingTask.promise;
+    const numPages = pdfDocument.numPages;
+
+    console.log(`Processing PDF with ${numPages} pages`);
+
     const zip = new JSZip();
 
-    // Loop through each page and add it to the zip file
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
+    // Process each page
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
       
-      // FIXED: Check for page.buffer (not imageBuffer.buffer)
-      if (page && page.buffer) {
-        zip.file(`page-${i + 1}.jpg`, page.buffer);
-      }
+      // Get viewport with scale for better quality
+      const scale = 2.0; // Higher scale = better quality
+      const viewport = page.getViewport({ scale });
+
+      // Create canvas
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const context = canvas.getContext("2d");
+
+      // Render PDF page to canvas
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport,
+      };
+
+      await page.render(renderContext).promise;
+
+      // Convert canvas to buffer (PNG format)
+      const imageBuffer = canvas.toBuffer("image/png");
+
+      // Add to zip
+      zip.file(`page-${pageNum}.png`, imageBuffer);
+
+      console.log(`Processed page ${pageNum}/${numPages}`);
     }
 
+    // Generate zip file
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
-    // Return the zip file as a download
+    // Return the zip file
     const headers = new Headers();
     headers.set("Content-Type", "application/zip");
     headers.set(
@@ -53,6 +76,8 @@ export const POST = async (req) => {
   } catch (error) {
     console.error("Server error:", error);
     console.error("Error details:", error instanceof Error ? error.message : String(error));
+    console.error("Stack trace:", error instanceof Error ? error.stack : "");
+    
     return NextResponse.json(
       { 
         error: "Server error: Failed to process PDF.",
