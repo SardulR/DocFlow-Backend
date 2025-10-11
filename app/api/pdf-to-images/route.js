@@ -1,55 +1,64 @@
-// app/api/pdf-to-images/route.ts
+// app/api/pdf-to-images/route.js
 import { NextResponse } from "next/server";
 import { fromBuffer } from "pdf2pic";
 import JSZip from "jszip";
 
 export const POST = async (req) => {
-  try {
-    const formData = await req.formData();
-    const file = formData.get("file");
+  try {
+    const formData = await req.formData();
+    const file = formData.get("file");
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfBuffer = Buffer.from(arrayBuffer);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfBuffer = Buffer.from(arrayBuffer);
 
-    // Use pdf2pic to convert the PDF buffer to a list of image buffers
-    const convert = fromBuffer(pdfBuffer, {
-      density: 100, // Image quality (higher is better)
-      saveFilename: "page",
-      format: "jpg",
-      savePath: ".", // No need to save to a file
-    });
+    // Configure the conversion options for pdf2pic
+    const options = {
+      density: 150, // A good balance of quality and file size
+      saveFilename: "page", // The base name for the output files
+      format: "jpg",
+      width: 768, // Optional: set a fixed width for the images
+      height: 1024, // Optional: set a fixed height for the images
+    };
 
-    const images = await convert.bulk(-1, { responseType: "buffer" });
-    const zip = new JSZip();
+    // fromBuffer returns a function that you can call to convert pages
+    const convert = fromBuffer(pdfBuffer, options);
+    
+    // Use 'bulk' with -1 to convert all pages and get buffers in the response
+    const imageBuffers = await convert.bulk(-1, { responseType: "buffer" });
 
-    // Loop through each image and add it to the zip file
-    images.forEach((imageBuffer, index) => {
-      // Ensure imageBuffer is a Buffer before adding it
-      if (imageBuffer && imageBuffer.buffer) {
-        zip.file(`page-${index + 1}.jpg`, imageBuffer.buffer);
-      }
-    });
+    const zip = new JSZip();
 
-    const zipBlob = await zip.generateAsync({ type: "nodebuffer" });
+    // Loop through the array of image buffer objects and add each to the zip file
+    imageBuffers.forEach((imageOutput, index) => {
+      // Ensure the buffer exists before adding it to the zip
+      if (imageOutput && imageOutput.buffer) {
+        // The file name inside the ZIP will be page-1.jpg, page-2.jpg, etc.
+        zip.file(`page-${index + 1}.jpg`, imageOutput.buffer);
+      }
+    });
 
-    // Return the zip file as a download
-    const headers = new Headers();
-    headers.set("Content-Type", "application/zip");
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename="converted-images.zip"`
-    );
+    // Generate the ZIP file as a Node.js buffer
+    const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
-    return new Response(zipBlob, { headers });
-  } catch (error) {
-    console.error("Server error:", error);
-    return NextResponse.json(
-      { error: "Server error: Failed to process PDF." },
-      { status: 500 }
-    );
-  }
+    // Set the headers for the response to trigger a file download
+    const headers = new Headers();
+    headers.set("Content-Type", "application/zip");
+    headers.set(
+      "Content-Disposition",
+      `attachment; filename="converted-images.zip"`
+    );
+
+    return new Response(zipBuffer, { headers });
+
+  } catch (error) {
+    console.error("Server error:", error);
+    return NextResponse.json(
+      { error: "Server error: Failed to process the PDF." },
+      { status: 500 }
+    );
+  }
 };
